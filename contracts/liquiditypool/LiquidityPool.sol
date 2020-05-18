@@ -35,9 +35,12 @@ contract LiquidityPool is ReentrancyGuard {
     IOracle internal oracle;
     ISFC internal sfc;
 
-    int32 internal addLkPercentReward1000;
-    int32 internal getLkPercentFee1000;
-    int32 internal getLkPercentLimit1000;
+    uint256 internal addLkPercentRewardNum;
+    uint256 internal addLkPercentRewardDenom;
+    uint256 internal getLkPercentFeeNum;
+    uint256 internal getLkPercentFeeDenom;
+    uint256 internal getLkPercentLimitNum;
+    uint256 internal getLkPercentLimitDenom;
 
     // Events
     event Add(
@@ -59,8 +62,17 @@ contract LiquidityPool is ReentrancyGuard {
         oracle = IOracle(oracle);
         owner = msg.sender;
 
-        // Init values
-        getLkPercentLimit1000 = 1000; // No limits for output
+        // No limits for output
+        getLkPercentLimitNum = 1;
+        getLkPercentLimitDenom = 1;
+
+        // No reward
+        addLkPercentRewardNum = 0;
+        addLkPercentRewardDenom = 1;
+
+        // No fee
+        getLkPercentFeeNum = 0;
+        getLkPercentFeeDenom = 1;
     }
 
     modifier onlyOwner {
@@ -113,23 +125,32 @@ contract LiquidityPool is ReentrancyGuard {
     }
 
     // Change options
-    function setReward(int32 percent1000) external onlyRewardEditor {
-        addLkPercentReward1000 = percent1000;
+    function setReward(uint256 percentNum, uint256 percentDenom) external onlyRewardEditor {
+        require(percentDenom > 0, "denominator must be great then 0.");
+
+        addLkPercentRewardNum = percentNum;
+        addLkPercentRewardDenom = percentDenom;
     }
-    function getReward() external returns(int32 percent1000) {
-        return addLkPercentReward1000;
+    function getReward() external returns(uint256 percentNum, uint256 percentDenom) {
+        return (addLkPercentRewardNum, addLkPercentRewardDenom);
     }
-    function setFee(int32 percent1000) external onlyFeeEditor {
-        getLkPercentFee1000 = percent1000;
+    function setFee(uint256 percentNum, uint256 percentDenom) external onlyFeeEditor {
+        require(percentDenom > 0, "denominator must be great then 0.");
+
+        getLkPercentFeeNum = percentNum;
+        getLkPercentFeeDenom = percentDenom;
     }
-    function getFee() external returns(int32 percent1000) {
-        return getLkPercentFee1000;
+    function getFee() external returns(uint256 percentNum, uint256 percentDenom) {
+        return (getLkPercentFeeNum, getLkPercentFeeDenom);
     }
-    function setLimit(int32 percent1000) external onlyLimitEditor {
-        getLkPercentLimit1000 = percent1000;
+    function setLimit(uint256 percentNum, uint256 percentDenom) external onlyLimitEditor {
+        require(percentDenom > 0, "denominator must be great then 0.");
+
+        getLkPercentLimitNum = percentNum;
+        getLkPercentLimitDenom = percentDenom;
     }
-    function getLimit() external returns(int32 percent1000) {
-        return getLkPercentLimit1000;
+    function getLimit() external returns(uint256 percentNum, uint256 percentDenom) {
+        return (getLkPercentLimitNum, getLkPercentLimitDenom);
     }
 
     // getPrice - get price fUSD/native token
@@ -155,7 +176,9 @@ contract LiquidityPool is ReentrancyGuard {
 
 
         // Transfer contract usd tokens with reward to user balance
-        fUSDAmount = _value_native.mul(priceToken).mul(addLkPercentReward1000.add(1000).div(1000)).div(priceUSD);
+        fUSDAmount = _value_native.mul(priceToken).mul(
+                addLkPercentRewardNum.add(addLkPercentRewardDenom).div(addLkPercentRewardDenom)
+            ).div(priceUSD);
         if (fUSDAmount < ERC20(fUSD).balanceOf(address(this))) {
             // If contract usd token balance great then amount - transfer
             success = ERC20(fUSD).safeTransferFrom(address(this), msg.sender, fUSDAmount);
@@ -181,7 +204,7 @@ contract LiquidityPool is ReentrancyGuard {
         priceUSD = oracle.getPrice(fUSD);
         require(priceUSD > 0, "fUSD token price must be great then 0.");
 
-        reward_fUSD = _value_native.mul(priceToken).mul(addLkPercentReward1000).div(priceUSD.mul(1000));
+        reward_fUSD = _value_native.mul(priceToken).mul(addLkPercentRewardNum).div(priceUSD.mul(addLkPercentRewardDenom));
         amount_fUSD = _value_native.mul(priceToken).div(priceUSD);
     }
 
@@ -197,9 +220,11 @@ contract LiquidityPool is ReentrancyGuard {
         priceUSD = oracle.getPrice(fUSD);
         require(priceUSD > 0, "fUSD token price must be great then 0.");
 
-        fUSDAmount = _value_native.mul(priceToken).mul(getLkPercentFee1000.add(1000).div(1000)).div(priceUSD);
+        fUSDAmount = _value_native.mul(priceToken).mul(
+                getLkPercentFeeNum.add(getLkPercentFeeDenom).div(getLkPercentFeeDenom)
+            ).div(priceUSD);
         // Check limits
-        require(fUSDAmount <= ERC20(fUSD).balanceOf(msg.sender).mul(getLkPercentLimit1000).div(1000),
+        require(fUSDAmount <= ERC20(fUSD).balanceOf(msg.sender).mul(getLkPercentLimitNum).div(getLkPercentLimitDenom),
             "out of limits for fUSD tokens getting.");
 
         success = ERC20(fUSD).safeTransferFrom(msg.sender, address(this), fUSDAmount);
@@ -216,9 +241,9 @@ contract LiquidityPool is ReentrancyGuard {
         priceUSD = oracle.getPrice(fUSD);
         require(priceUSD > 0, "fUSD token price must be great then 0.");
 
-        fee_fUSD = _value_native.mul(priceToken).mul(getLkPercentFee1000).div(priceUSD.mul(1000));
+        fee_fUSD = _value_native.mul(priceToken).mul(getLkPercentFeeNum).div(priceUSD.mul(getLkPercentFeeDenom));
         amount_fUSD = _value_native.mul(priceToken).div(priceUSD);
-        limit_fUSD = ERC20(token).balanceOf(msg.sender).mul(getLkPercentLimit1000).div(1000);
+        limit_fUSD = ERC20(token).balanceOf(msg.sender).mul(getLkPercentLimitNum).div(getLkPercentFeeDenom);
     }
 
     // transfer - move fUSD between users
