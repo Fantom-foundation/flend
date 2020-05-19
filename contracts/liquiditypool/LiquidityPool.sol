@@ -2,8 +2,11 @@ pragma solidity ^0.5.0;
 
 /*
 constructor(token contract, sfc contract, oracle contract, usd token contract)
-addLiquidity(uint256 _value token) bool success
-getLiquidity(uint256 _value token) bool success
+getPrice() uint256 priceNative, uint256 priceUSD
+deposit(uint256 _value token) bool success
+depositInfo(uint256 _value token)
+withdraw(uint256 _value token) bool success
+withdrawInfo(uint256 _value token)
 getBalance(address _from) uint256 balance in usd token
 transfer(address _to, uint256 _amount usd token) bool success
 */
@@ -154,19 +157,17 @@ contract LiquidityPool is ReentrancyGuard {
     }
 
     // getPrice - get price fUSD/native token
-    function getPrice() external nonReentrant returns(uint256) {
-        priceToken = oracle.getPrice(token);
-        require(priceToken > 0, "native token price must be great then 0.");
-        priceUSD = oracle.getPrice(fUSD);
-        require(priceUSD > 0, "fUSD token price must be great then 0.");
-
-        return priceUSD.div(priceToken);
+    function getPrice() external nonReentrant returns(uint256 nativePrice, uint256 fUSDPrice) {
+        nativePrice = oracle.getPrice(token);
+        require(nativePrice > 0, "native token price must be great then 0.");
+        fUSDPrice = oracle.getPrice(fUSD);
+        require(fUSDPrice > 0, "fUSD token price must be great then 0.");
     }
 
-    // addLiquidity - add native token from user and generate usd tokens for user
+    // deposit - add native token from user and generate usd tokens for user
     // params:
     // _value - native token value
-    function addLiquidity(uint256 _value_native) external nonReentrant returns(bool) {
+    function deposit(uint256 _value_native) external nonReentrant returns(bool) {
         require(_value_native > 0, "value must be great then 0.");
 
         priceToken = oracle.getPrice(token);
@@ -196,7 +197,7 @@ contract LiquidityPool is ReentrancyGuard {
         emit Deposit(token, msg.sender, _value_native, block.timestamp);
         return true;
     }
-    function addLiquidityInfo(uint256 _value_native) external nonReentrant returns(uint256 amount_fUSD, int256 reward_fUSD) {
+    function depositInfo(uint256 _value_native) external nonReentrant returns(uint256 amount_fUSD, int256 reward_fUSD) {
         require(_value_native > 0, "value must be great then 0.");
 
         priceToken = oracle.getPrice(token);
@@ -208,10 +209,10 @@ contract LiquidityPool is ReentrancyGuard {
         amount_fUSD = _value_native.mul(priceToken).div(priceUSD);
     }
 
-    // getLiquidity - return native token to user over usd tokens conversation and fee
+    // withdraw - return native token to user over usd tokens conversation and fee
     // params:
     // _value - native token value
-    function getLiquidity(uint256 _value_native) external nonReentrant returns(bool) {
+    function withdraw(uint256 _value_native) external nonReentrant returns(bool) {
         require(_value_native > 0, "value must be great then 0.");
         require(_value_native > ERC20(token).balanceOf(address(this)), "native token of contract not enaught.");
 
@@ -232,7 +233,7 @@ contract LiquidityPool is ReentrancyGuard {
 
         return true;
     }
-    function getLiquidityInfo(uint256 _value_native) external nonReentrant
+    function withdrawInfo(uint256 _value_native) external nonReentrant
                 returns(uint256 amount_fUSD, int256 fee_fUSD, uint256 limit_fUSD) {
         require(_value_native > 0, "value must be great then 0.");
 
