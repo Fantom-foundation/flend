@@ -21,45 +21,54 @@ const TestSFC = artifacts.require('TestSFC');
 const TestToken = artifacts.require('TestToken');
 const contractGasLimit = 4712388;
 
-const nativeTokenAddr = '0xFFfFfFffFFfffFFfFFfFFFFFffFFFffffFfFFFfF';
-const nonNativeTokenAddr = '0xC17518AE5dAD82B8fc8b56Fe0295881c30848829';
-
 const sfcAddress = '0xFC00FACE00000000000000000000000000000000';
 const fUSDAddress = '0xC17518AE5dAD82B8fc8b56Fe0295881c30848829';
+
+const wallet1BeginBalance = 1000000000;
 
 contract('liquidity pool test', async (wallets) => {
   const owner = wallets[0];
 
-  const alice = wallets[1];
-  const bob = wallets[2];
-  const carol = wallets[3];
-  const dave = wallets[4];
-  const frank = wallets[5];
-  const grace = wallets[6];
-
   beforeEach(async function () {
     testSFC = await TestSFC.new();
     
-    testToken = await TestToken.new('Test', 'tst', 3);
+    nativeToken = await TestToken.new('Test', 'tst', 3);
     testToken2 = await TestToken.new('Test2', 'tst2', 3);
 
     testOracle = await TestOracle.new();
-    testOracle.setPrice(testToken.address, Web3.utils.toBN('1'));
+    testOracle.setPrice(nativeToken.address, Web3.utils.toBN('1'));
     testOracle.setPrice(testToken2.address, Web3.utils.toBN('1'));
-    testOracle.setPrice(nativeTokenAddr, Web3.utils.toBN('1'));
-    testOracle.setPrice(nonNativeTokenAddr, Web3.utils.toBN('2'));
-    
-    liquiditypool = await newLiquidityPool(testSFC, testOracle, testToken)
-    amt = 100000000000
-    await testToken.increaseAllowance(liquiditypool.address, amt)
-    await testToken2.increaseAllowance(liquiditypool.address, amt)
+
+    liquiditypool = await newLiquidityPool(nativeToken, testToken2, testOracle, testSFC);
+    amt = Web3.utils.toBN('100000000000');
+
+    let msg = {from: wallets[0]};
+    await nativeToken.increaseAllowance(liquiditypool.address, amt, msg);
+    await nativeToken.increaseAllowance(wallets[1], amt, msg);
+    await nativeToken.increaseAllowance(wallets[0], amt, msg);
+    await testToken2.increaseAllowance(liquiditypool.address, amt, msg);
+    await testToken2.increaseAllowance(wallets[0], amt, msg);
+    await testToken2.increaseAllowance(wallets[1], amt, msg);
+    msg = {from: wallets[1]};
+    await nativeToken.increaseAllowance(liquiditypool.address, amt, msg);
+    await nativeToken.increaseAllowance(wallets[0], amt, msg);
+    await nativeToken.increaseAllowance(wallets[1], amt, msg);
+    await testToken2.increaseAllowance(liquiditypool.address, amt, msg);
+    await testToken2.increaseAllowance(wallets[0], amt, msg);
+    await testToken2.increaseAllowance(wallets[1], amt, msg);
   });
 
   it('checking pool parameters', checkPoolParams);
+  it('test success deposit no reward', async () => {
+    await checkSuccessDepositNoReward(wallets)
+  });
+  it('test success deposit with reward', async () => {
+    await checkSuccessDepositWithReward(wallets)
+  });
 });
 
-async function newLiquidityPool(testSFC, testOracle, fusd) {
-  liquiditypool = await LiquidityPool.new(nativeTokenAddr, fusd.address, testOracle.address, testSFC.address);
+async function newLiquidityPool(nativeToken, fusd, testOracle, testSFC) {
+  liquiditypool = await LiquidityPool.new(nativeToken.address, fusd.address, testOracle.address, testSFC.address);
     if (liquiditypool.constructor._json.deployedBytecode.length >= contractGasLimit)
       throw "gas limit exceeded"
   return liquiditypool
@@ -77,4 +86,33 @@ async function checkPoolParams() {
   const resLimit = liquiditypool.getLimit()
   const {0: limitNum, 1: limitDenom} = resLimit;
   expect(limitNum === 1 && limitDenom === 1);
+}
+
+async function checkSuccessDepositNoReward(wallets) {
+  await nativeToken.transferFrom(wallets[0], wallets[1], wallet1BeginBalance);
+
+  let nonZeroAmt = Web3.utils.toBN('100');
+
+  let msg = {from: wallets[1]};
+  res = await liquiditypool.deposit(nonZeroAmt, msg);
+  expect(res.receipt != null);
+
+  expect(nativeToken.balanceOf(wallets[1]) === (wallet1BeginBalance - nonZeroAmt));
+  expect(testToken2.balanceOf(wallets[1]) === nonZeroAmt);
+}
+
+async function checkSuccessDepositWithReward(wallets) {
+  await nativeToken.transferFrom(wallets[0], wallets[1], wallet1BeginBalance);
+
+  let nonZeroAmt = Web3.utils.toBN('100');
+
+  // With reward
+  await liquiditypool.setReward(1, 100);
+
+  let msg = {from: wallets[1]};
+  res = await liquiditypool.deposit(nonZeroAmt, msg);
+  expect(res.receipt != null);
+
+  expect(nativeToken.balanceOf(wallets[1]) === (wallet1BeginBalance - nonZeroAmt));
+  expect(testToken2.balanceOf(wallets[1]) === (nonZeroAmt + 1));
 }

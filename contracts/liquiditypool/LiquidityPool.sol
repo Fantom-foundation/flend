@@ -3,12 +3,11 @@ pragma solidity ^0.5.0;
 /*
 constructor(token contract, sfc contract, oracle contract, usd token contract)
 getPrice() uint256 priceNative, uint256 priceUSD
+getInfo() address tokenNative, uint256 rewardNum, uint256 rewardDenom, uint256 feeNum, uint256 feeDenom, uint256 limitNum, uint256 limitDenom
 deposit(uint256 _value token) bool success
 depositInfo(uint256 _value token)
 withdraw(uint256 _value token) bool success
 withdrawInfo(uint256 _value token)
-getBalance(address _from) uint256 balance in usd token
-transfer(address _to, uint256 _amount usd token) bool success
 */
 
 import "@openzeppelin/contracts/math/SafeMath.sol";
@@ -16,14 +15,12 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20Mintable.sol";
-import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import "../interface/Oracle.sol";
 import "../interface/SFC.sol";
 
 contract LiquidityPool is ReentrancyGuard {
     using SafeMath for uint256;
     using Address for address;
-    using SafeERC20 for ERC20;
 
     // Users
     address internal owner;
@@ -33,8 +30,9 @@ contract LiquidityPool is ReentrancyGuard {
     mapping (address => bool) internal limitEditors;
 
     // Init values (contracts)
-    address internal token;
-    address internal fUSD;
+    ERC20 internal token;
+    ERC20 internal fUSD;
+    ERC20Mintable internal fUSDmint;
     IOracle internal oracle;
     ISFC internal sfc;
 
@@ -67,8 +65,9 @@ contract LiquidityPool is ReentrancyGuard {
         require(_sfc != address(0), "invalid sfc address");
         require(_oracle != address(0), "invalid oracle address");
         require(_fusd != address(0), "invalid fUSD address");
-        token = _token;
-        fUSD = _fusd;
+        token = ERC20(_token);
+        fUSD = ERC20(_fusd);
+        fUSDmint = ERC20Mintable(_fusd);
         oracle = IOracle(_oracle);
         sfc = ISFC(_sfc);
         owner = msg.sender;
@@ -166,15 +165,15 @@ contract LiquidityPool is ReentrancyGuard {
 
     // getPrice - get price fUSD/native token
     function getPrice() external nonReentrant returns(uint256 nativePrice, uint256 fUSDPrice) {
-        nativePrice = oracle.getPrice(token);
+        nativePrice = oracle.getPrice(address(token));
         require(nativePrice > 0, "native token price must be great then 0.");
-        fUSDPrice = oracle.getPrice(fUSD);
+        fUSDPrice = oracle.getPrice(address(fUSD));
         require(fUSDPrice > 0, "fUSD token price must be great then 0.");
     }
     function getInfo() external nonReentrant returns(address tokenNative,
         uint256 rewardNum, uint256 rewardDenom, uint256 feeNum, uint256 feeDenom, uint256 limitNum, uint256 limitDenom) {
 
-        tokenNative = token;
+        tokenNative = address(token);
 
         rewardNum = addLkPercentRewardNum;
         rewardDenom = addLkPercentRewardDenom;
@@ -189,40 +188,40 @@ contract LiquidityPool is ReentrancyGuard {
     // deposit - add native token from user and generate usd tokens for user
     // params:
     // _value - native token value
-    function deposit(uint256 _value_native) external nonReentrant returns(bool) {
+    function deposit(uint256 _value_native) external payable nonReentrant {
         require(_value_native > 0, "value must be great then 0.");
 
-        uint256 priceToken = oracle.getPrice(token);
+        uint256 priceToken = oracle.getPrice(address(token));
         require(priceToken > 0, "native token price must be great then 0.");
-        uint256 priceUSD = oracle.getPrice(fUSD);
+        uint256 priceUSD = oracle.getPrice(address(fUSD));
         require(priceUSD > 0, "fUSD token price must be great then 0.");
-
 
         // Transfer contract usd tokens with reward to user balance
         uint256 fUSDAmount = _value_native.mul(priceToken).mul(
                 addLkPercentRewardNum.add(addLkPercentRewardDenom).div(addLkPercentRewardDenom)
             ).div(priceUSD);
-        if (fUSDAmount < ERC20(fUSD).balanceOf(address(this))) {
+
+        if (fUSDAmount < fUSD.balanceOf(address(this))) {
             // If contract usd token balance great then amount - transfer
-            ERC20(fUSD).safeTransferFrom(address(this), msg.sender, fUSDAmount);
+            fUSD.transferFrom(address(this), msg.sender, fUSDAmount);
         } else {
             // Else - mint required amount to user address
-            bool success = ERC20Mintable(fUSD).mint(msg.sender, fUSDAmount);
+            bool success = fUSDmint.mint(msg.sender, fUSDAmount);
             require(success, "error mint fUSD to user.");
         }
 
         // Transfer native user tokens to contract native balance
-        ERC20(token).safeTransferFrom(msg.sender, address(this), _value_native);
+        require(token.balanceOf(msg.sender) >= _value_native, "sender balance must by great then amount.");
+        token.transferFrom(msg.sender, address(this), _value_native);
 
-        emit Deposit(token, msg.sender, _value_native, fUSDAmount, block.timestamp);
-        return true;
+        emit Deposit(address(token), msg.sender, _value_native, fUSDAmount, block.timestamp);
     }
     function depositInfo(uint256 _value_native) external nonReentrant returns(uint256 amount_fUSD, uint256 reward_fUSD) {
         require(_value_native > 0, "value must be great then 0.");
 
-        uint256 priceToken = oracle.getPrice(token);
+        uint256 priceToken = oracle.getPrice(address(token));
         require(priceToken > 0, "native token price must be great then 0.");
-        uint256 priceUSD = oracle.getPrice(fUSD);
+        uint256 priceUSD = oracle.getPrice(address(fUSD));
         require(priceUSD > 0, "fUSD token price must be great then 0.");
 
         reward_fUSD = _value_native.mul(priceToken).mul(addLkPercentRewardNum).div(priceUSD.mul(addLkPercentRewardDenom));
@@ -232,48 +231,37 @@ contract LiquidityPool is ReentrancyGuard {
     // withdraw - return native token to user over usd tokens conversation and fee
     // params:
     // _value - native token value
-    function withdraw(uint256 _value_native) external nonReentrant returns(bool) {
+    function withdraw(uint256 _value_native) external nonReentrant {
         require(_value_native > 0, "value must be great then 0.");
-        require(_value_native > ERC20(token).balanceOf(address(this)), "native token of contract not enaught.");
+        require(_value_native > token.balanceOf(address(this)), "native token of contract not enaught.");
 
-        uint256 priceToken = oracle.getPrice(token);
+        uint256 priceToken = oracle.getPrice(address(token));
         require(priceToken > 0, "native token price must be great then 0.");
-        uint256 priceUSD = oracle.getPrice(fUSD);
+        uint256 priceUSD = oracle.getPrice(address(fUSD));
         require(priceUSD > 0, "fUSD token price must be great then 0.");
 
         uint256 fUSDAmount = _value_native.mul(priceToken).mul(
                 getLkPercentFeeNum.add(getLkPercentFeeDenom).div(getLkPercentFeeDenom)
             ).div(priceUSD);
         // Check limits
-        require(fUSDAmount <= ERC20(fUSD).balanceOf(msg.sender).mul(getLkPercentLimitNum).div(getLkPercentLimitDenom),
+        require(fUSDAmount <= fUSD.balanceOf(msg.sender).mul(getLkPercentLimitNum).div(getLkPercentLimitDenom),
             "out of limits for fUSD tokens getting.");
 
-        ERC20(fUSD).safeTransferFrom(msg.sender, address(this), fUSDAmount);
+        fUSD.transferFrom(msg.sender, address(this), fUSDAmount);
 
-        emit Withdraw(token, msg.sender, _value_native, fUSDAmount, block.timestamp);
-        return true;
+        emit Withdraw(address(token), msg.sender, _value_native, fUSDAmount, block.timestamp);
     }
     function withdrawInfo(uint256 _value_native) external nonReentrant
                 returns(uint256 amount_fUSD, uint256 fee_fUSD, uint256 limit_fUSD) {
         require(_value_native > 0, "value must be great then 0.");
 
-        uint256 priceToken = oracle.getPrice(token);
+        uint256 priceToken = oracle.getPrice(address(token));
         require(priceToken > 0, "native token price must be great then 0.");
-        uint256 priceUSD = oracle.getPrice(fUSD);
+        uint256 priceUSD = oracle.getPrice(address(fUSD));
         require(priceUSD > 0, "fUSD token price must be great then 0.");
 
         fee_fUSD = _value_native.mul(priceToken).mul(getLkPercentFeeNum).div(priceUSD.mul(getLkPercentFeeDenom));
         amount_fUSD = _value_native.mul(priceToken).div(priceUSD);
-        limit_fUSD = ERC20(token).balanceOf(msg.sender).mul(getLkPercentLimitNum).div(getLkPercentFeeDenom);
-    }
-
-    // transfer - move fUSD between users
-    function transfer(address _to, uint256 _amount_fUSD) external nonReentrant returns(bool) {
-        require(_amount_fUSD > 0, "amount must be great then 0.");
-        require(_amount_fUSD <= ERC20(fUSD).balanceOf(msg.sender), "sender have not required fUSD tokens for operation.");
-
-        ERC20(fUSD).safeTransferFrom(msg.sender, _to, _amount_fUSD);
-
-        return true;
+        limit_fUSD = token.balanceOf(msg.sender).mul(getLkPercentLimitNum).div(getLkPercentFeeDenom);
     }
 }
