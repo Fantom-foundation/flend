@@ -15,12 +15,14 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20Mintable.sol";
+import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import "../interface/Oracle.sol";
 import "../interface/SFC.sol";
 
 contract LiquidityPool is ReentrancyGuard {
     using SafeMath for uint256;
     using Address for address;
+    using SafeERC20 for ERC20;
 
     // Users
     address internal owner;
@@ -86,23 +88,23 @@ contract LiquidityPool is ReentrancyGuard {
     }
 
     modifier onlyOwner {
-        require(msg.sender == owner, "Only owner can call this function.");
+        require(msg.sender == owner, "only owner can call this function");
         _;
     }
     modifier onlyAdmin {
-        require(msg.sender == owner || admins[msg.sender], "Only owner or admins can call this function.");
+        require(msg.sender == owner || admins[msg.sender], "only owner or admins can call this function");
         _;
     }
     modifier onlyRewardEditor {
-        require(msg.sender == owner || rewardEditors[msg.sender], "Only owner or reward editors can call this function.");
+        require(msg.sender == owner || rewardEditors[msg.sender], "only owner or reward editors can call this function");
         _;
     }
     modifier onlyFeeEditor {
-        require(msg.sender == owner || feeEditors[msg.sender], "Only owner or fee editors can call this function.");
+        require(msg.sender == owner || feeEditors[msg.sender], "only owner or fee editors can call this function");
         _;
     }
     modifier onlyLimitEditor {
-        require(msg.sender == owner || limitEditors[msg.sender], "Only owner or limit editors can call this function.");
+        require(msg.sender == owner || limitEditors[msg.sender], "only owner or limit editors can call this function");
         _;
     }
 
@@ -136,41 +138,41 @@ contract LiquidityPool is ReentrancyGuard {
 
     // Change options
     function setReward(uint256 percentNum, uint256 percentDenom) external onlyRewardEditor {
-        require(percentDenom > 0, "denominator must be great then 0.");
+        require(percentDenom > 0, "denominator must be great then 0");
 
         addLkPercentRewardNum = percentNum;
         addLkPercentRewardDenom = percentDenom;
     }
-    function getReward() external returns(uint256 percentNum, uint256 percentDenom) {
+    function getReward() public view returns(uint256 percentNum, uint256 percentDenom) {
         return (addLkPercentRewardNum, addLkPercentRewardDenom);
     }
     function setFee(uint256 percentNum, uint256 percentDenom) external onlyFeeEditor {
-        require(percentDenom > 0, "denominator must be great then 0.");
+        require(percentDenom > 0, "denominator must be great then 0");
 
         getLkPercentFeeNum = percentNum;
         getLkPercentFeeDenom = percentDenom;
     }
-    function getFee() external returns(uint256 percentNum, uint256 percentDenom) {
+    function getFee() public view returns(uint256 percentNum, uint256 percentDenom) {
         return (getLkPercentFeeNum, getLkPercentFeeDenom);
     }
     function setLimit(uint256 percentNum, uint256 percentDenom) external onlyLimitEditor {
-        require(percentDenom > 0, "denominator must be great then 0.");
+        require(percentDenom > 0, "denominator must be great then 0");
 
         getLkPercentLimitNum = percentNum;
         getLkPercentLimitDenom = percentDenom;
     }
-    function getLimit() external returns(uint256 percentNum, uint256 percentDenom) {
+    function getLimit() public view returns(uint256 percentNum, uint256 percentDenom) {
         return (getLkPercentLimitNum, getLkPercentLimitDenom);
     }
 
     // getPrice - get price fUSD/native token
-    function getPrice() external nonReentrant returns(uint256 nativePrice, uint256 fUSDPrice) {
+    function getPrice() public view returns(uint256 nativePrice, uint256 fUSDPrice) {
         nativePrice = oracle.getPrice(address(token));
-        require(nativePrice > 0, "native token price must be great then 0.");
+        require(nativePrice > 0, "native token price must be great then 0");
         fUSDPrice = oracle.getPrice(address(fUSD));
-        require(fUSDPrice > 0, "fUSD token price must be great then 0.");
+        require(fUSDPrice > 0, "fUSD token price must be great then 0");
     }
-    function getInfo() external nonReentrant returns(address tokenNative,
+    function getInfo() public view returns(address tokenNative,
         uint256 rewardNum, uint256 rewardDenom, uint256 feeNum, uint256 feeDenom, uint256 limitNum, uint256 limitDenom) {
 
         tokenNative = address(token);
@@ -189,79 +191,82 @@ contract LiquidityPool is ReentrancyGuard {
     // params:
     // _value - native token value
     function deposit(uint256 _value_native) external payable nonReentrant {
-        require(_value_native > 0, "value must be great then 0.");
+        require(_value_native > 0, "value must be great then 0");
+        require(token.balanceOf(msg.sender) >= _value_native, "sender balance must by great then amount");
 
         uint256 priceToken = oracle.getPrice(address(token));
-        require(priceToken > 0, "native token price must be great then 0.");
+        require(priceToken > 0, "native token price must be great then 0");
         uint256 priceUSD = oracle.getPrice(address(fUSD));
-        require(priceUSD > 0, "fUSD token price must be great then 0.");
+        require(priceUSD > 0, "fUSD token price must be great then 0");
 
         // Transfer contract usd tokens with reward to user balance
-        uint256 fUSDAmount = _value_native.mul(priceToken).mul(
-                addLkPercentRewardNum.add(addLkPercentRewardDenom).div(addLkPercentRewardDenom)
-            ).div(priceUSD);
+        uint256 amount_fUSD = _value_native.mul(priceToken).div(priceUSD);
+        uint256 reward_fUSD = amount_fUSD.mul(addLkPercentRewardNum).div(addLkPercentRewardDenom);
+        uint256 fUSDAmount = amount_fUSD.add(reward_fUSD);
 
-        if (fUSDAmount < fUSD.balanceOf(address(this))) {
+        if (fUSDAmount < fUSD.balanceOf(owner)) {
             // If contract usd token balance great then amount - transfer
-            fUSD.transferFrom(address(this), msg.sender, fUSDAmount);
+            fUSD.safeTransferFrom(owner, msg.sender, fUSDAmount);
         } else {
             // Else - mint required amount to user address
             bool success = fUSDmint.mint(msg.sender, fUSDAmount);
-            require(success, "error mint fUSD to user.");
+            require(success, "error mint fUSD to user");
         }
 
         // Transfer native user tokens to contract native balance
-        require(token.balanceOf(msg.sender) >= _value_native, "sender balance must by great then amount.");
-        token.transferFrom(msg.sender, address(this), _value_native);
+        token.safeTransferFrom(msg.sender, owner, _value_native);
 
         emit Deposit(address(token), msg.sender, _value_native, fUSDAmount, block.timestamp);
     }
-    function depositInfo(uint256 _value_native) external nonReentrant returns(uint256 amount_fUSD, uint256 reward_fUSD) {
-        require(_value_native > 0, "value must be great then 0.");
+    function depositInfo(uint256 _value_native) public view
+            returns(uint256 amount_fUSD, uint256 reward_fUSD) {
+        require(_value_native > 0, "value must be great then 0");
 
         uint256 priceToken = oracle.getPrice(address(token));
-        require(priceToken > 0, "native token price must be great then 0.");
+        require(priceToken > 0, "native token price must be great then 0");
         uint256 priceUSD = oracle.getPrice(address(fUSD));
-        require(priceUSD > 0, "fUSD token price must be great then 0.");
+        require(priceUSD > 0, "fUSD token price must be great then 0");
 
-        reward_fUSD = _value_native.mul(priceToken).mul(addLkPercentRewardNum).div(priceUSD.mul(addLkPercentRewardDenom));
         amount_fUSD = _value_native.mul(priceToken).div(priceUSD);
+        reward_fUSD = amount_fUSD.mul(addLkPercentRewardNum).div(addLkPercentRewardDenom);
     }
 
     // withdraw - return native token to user over usd tokens conversation and fee
     // params:
     // _value - native token value
     function withdraw(uint256 _value_native) external nonReentrant {
-        require(_value_native > 0, "value must be great then 0.");
-        require(_value_native > token.balanceOf(address(this)), "native token of contract not enaught.");
+        require(_value_native > 0, "value must be great then 0");
+        require(_value_native <= token.balanceOf(owner), "native token of contract not enaught");
 
         uint256 priceToken = oracle.getPrice(address(token));
-        require(priceToken > 0, "native token price must be great then 0.");
+        require(priceToken > 0, "native token price must be great then 0");
         uint256 priceUSD = oracle.getPrice(address(fUSD));
-        require(priceUSD > 0, "fUSD token price must be great then 0.");
+        require(priceUSD > 0, "fUSD token price must be great then 0");
 
-        uint256 fUSDAmount = _value_native.mul(priceToken).mul(
-                getLkPercentFeeNum.add(getLkPercentFeeDenom).div(getLkPercentFeeDenom)
-            ).div(priceUSD);
+        uint256 amount_fUSD = _value_native.mul(priceToken).div(priceUSD);
+        uint256 fee_fUSD = amount_fUSD.mul(getLkPercentFeeNum).div(getLkPercentFeeDenom);
+        uint256 fUSDAmount = amount_fUSD.add(fee_fUSD);
+
         // Check limits
         require(fUSDAmount <= fUSD.balanceOf(msg.sender).mul(getLkPercentLimitNum).div(getLkPercentLimitDenom),
-            "out of limits for fUSD tokens getting.");
+            "out of limits for fUSD tokens getting");
 
-        fUSD.transferFrom(msg.sender, address(this), fUSDAmount);
+        fUSD.safeTransferFrom(msg.sender, owner, fUSDAmount);
+        token.safeTransferFrom(owner, msg.sender, _value_native);
 
         emit Withdraw(address(token), msg.sender, _value_native, fUSDAmount, block.timestamp);
     }
-    function withdrawInfo(uint256 _value_native) external nonReentrant
-                returns(uint256 amount_fUSD, uint256 fee_fUSD, uint256 limit_fUSD) {
-        require(_value_native > 0, "value must be great then 0.");
+    function withdrawInfo(uint256 _value_native) public view
+            returns(uint256 amount_fUSD, uint256 fee_fUSD, uint256 limit_fUSD) {
+        require(_value_native > 0, "value must be great then 0");
 
         uint256 priceToken = oracle.getPrice(address(token));
-        require(priceToken > 0, "native token price must be great then 0.");
+        require(priceToken > 0, "native token price must be great then 0");
         uint256 priceUSD = oracle.getPrice(address(fUSD));
-        require(priceUSD > 0, "fUSD token price must be great then 0.");
+        require(priceUSD > 0, "fUSD token price must be great then 0");
 
-        fee_fUSD = _value_native.mul(priceToken).mul(getLkPercentFeeNum).div(priceUSD.mul(getLkPercentFeeDenom));
         amount_fUSD = _value_native.mul(priceToken).div(priceUSD);
-        limit_fUSD = token.balanceOf(msg.sender).mul(getLkPercentLimitNum).div(getLkPercentFeeDenom);
+        fee_fUSD = amount_fUSD.mul(getLkPercentFeeNum).div(getLkPercentFeeDenom);
+        limit_fUSD = fUSD.balanceOf(msg.sender).mul(getLkPercentLimitNum).div(getLkPercentLimitDenom);
     }
 }
