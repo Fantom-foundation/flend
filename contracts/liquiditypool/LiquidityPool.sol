@@ -53,7 +53,8 @@ contract LiquidityPool is ReentrancyGuard {
 
     // Saved epochs for apply epoch rewards for users
     mapping (address => uint256) internal rewardEpochs;
-    address[] internal rewardUsers;
+    address[][2] internal rewardUsers;
+    uint256 internal currentRewardUsers;
 
     // Events
     event Deposit(
@@ -143,8 +144,7 @@ contract LiquidityPool is ReentrancyGuard {
         epochPercentRewardNum = 0;
         epochPercentRewardDenom = 1;
 
-        // Reward users list
-        rewardUsers = new address[];
+        currentRewardUsers = 0;
     }
 
     modifier onlyOwner {
@@ -288,8 +288,8 @@ contract LiquidityPool is ReentrancyGuard {
 
         // If current fUSD balance == 0 - add to rewardUsers and save currentEpoch
         if (fUSD.balanceOf(msg.sender) == 0) {
-            rewardEpochs[user] = sfc.currentEpoch();
-            rewardUsers.push(msg.sender);
+            rewardEpochs[msg.sender] = sfc.currentEpoch();
+            rewardUsers[currentRewardUsers].push(msg.sender);
         }
 
         uint256 priceToken = oracle.getPrice(address(token));
@@ -372,7 +372,7 @@ contract LiquidityPool is ReentrancyGuard {
     }
 
     // Apply calculated epoch rewards from fUSD for user
-    function applyEpochRewards(address user) external nonReentrant {
+    function applyEpochRewards(address user) internal {
         uint256 lastEpoch = rewardEpochs[user];
         uint256 currentEpoch = sfc.currentEpoch();
         uint256 applyEpochs = currentEpoch - lastEpoch;
@@ -414,19 +414,29 @@ contract LiquidityPool is ReentrancyGuard {
     }
 
     // Apply epoch rewards for all users and clean rewardUsers list for users with 0 fUSD balance
-    function applyEpochRewardsAll() external onlyAdmin nonReentrant {
-        address[] newRewardUsers = new address[];
+    function applyRewardsAll() external onlyAdmin nonReentrant {
+        // Clean not current reward users array
+        uint256 newRewardUsers = (currentRewardUsers + 1) % 2;
+        if (rewardUsers[newRewardUsers].length > 0) {
+            delete rewardUsers[newRewardUsers];
+        }
 
-        for (uint i = 0; i < rewardUsers.length; i++) {
-            applyEpochRewards(rewardUsers[i]);
+        for (uint i = 0; i < rewardUsers[currentRewardUsers].length; i++) {
+            address user = rewardUsers[currentRewardUsers][i];
+            applyEpochRewards(user);
 
-            if (fUSD.balanceOf(rewardUsers[i]) > 0) {
-                newRewardUsers.push(rewardUsers[i]);
+            // If user have balance > 0 - add to not corrent reward users array
+            if (fUSD.balanceOf(user) > 0) {
+                rewardUsers[newRewardUsers].push(user);
             }
         }
 
-        if (rewardUsers.length != newRewardUsers.length) {
-            rewardUsers = newRewardUsers;
-        }
+        // Switch current reward users array to new array and clean old array
+        uint256 prev = currentRewardUsers;
+        currentRewardUsers = newRewardUsers;
+        delete rewardUsers[prev];
+    }
+    function applyRewards(address user) external nonReentrant {
+        applyEpochRewards(user);
     }
 }
