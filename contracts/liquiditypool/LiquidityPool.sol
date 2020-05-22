@@ -45,6 +45,16 @@ contract LiquidityPool is ReentrancyGuard {
     uint256 internal getLkPercentLimitNum;
     uint256 internal getLkPercentLimitDenom;
 
+    // Epoch reward for fUSD
+    uint256 internal epochRewardMin;
+    uint256 internal epochRewardMax;            // 0 - mean "no limit"
+    uint256 internal epochPercentRewardNum;
+    uint256 internal epochPercentRewardDenom;
+
+    // Saved epochs for apply epoch rewards for users
+    mapping (address => uint256) internal rewardEpochs;
+    address[] internal rewardUsers;
+
     // Events
     event Deposit(
         address indexed _token,
@@ -58,6 +68,47 @@ contract LiquidityPool is ReentrancyGuard {
         address indexed _user,
         uint256 _amount,
         uint256 _amount_fUSD,
+        uint256 _timestamp
+    );
+    event SetRewardParams(
+        address indexed _token,
+        address indexed _user,
+
+        uint256 beginPercentNum,
+        uint256 beginPercentDenom,
+        uint256 epochPercentNum,
+        uint256 epochPercentDenom,
+        uint256 epochMin,
+        uint256 epochMax,
+
+        uint256 _timestamp
+    );
+    event SetFeeParams(
+        address indexed _token,
+        address indexed _user,
+
+        uint256 feePercentNum,
+        uint256 feePercentDenom,
+
+        uint256 _timestamp
+    );
+    event SetLimitParams(
+        address indexed _token,
+        address indexed _user,
+
+        uint256 limitPercentNum,
+        uint256 limitPercentDenom,
+
+        uint256 _timestamp
+    );
+    event EpochReward(
+        address indexed _token,
+        address indexed _user,
+
+        uint256 startEpoch,
+        uint256 epochsCount,
+        uint256 amount,
+
         uint256 _timestamp
     );
 
@@ -85,6 +136,15 @@ contract LiquidityPool is ReentrancyGuard {
         // No fee
         getLkPercentFeeNum = 0;
         getLkPercentFeeDenom = 1;
+
+        // No epoch reward
+        epochRewardMin = 0;
+        epochRewardMax = 0;
+        epochPercentRewardNum = 0;
+        epochPercentRewardDenom = 1;
+
+        // Reward users list
+        rewardUsers = new address[];
     }
 
     modifier onlyOwner {
@@ -137,29 +197,58 @@ contract LiquidityPool is ReentrancyGuard {
     }
 
     // Change options
-    function setReward(uint256 percentNum, uint256 percentDenom) external onlyRewardEditor {
-        require(percentDenom > 0, "denominator must be great then 0");
+    function setReward(uint256 _beginPercentNum, uint256 _beginPercentDenom,
+                        uint256 _epochPercentNum, uint256 _epochPercentDenom,
+                        uint256 _epochRewardMin, uint256 _epochRewardMax)
+            external onlyRewardEditor {
+        require(_beginPercentDenom > 0, "denominator must be great then 0");
+        require(_epochPercentDenom > 0, "denominator must be great then 0");
 
-        addLkPercentRewardNum = percentNum;
-        addLkPercentRewardDenom = percentDenom;
+        addLkPercentRewardNum = _beginPercentNum;
+        addLkPercentRewardDenom = _beginPercentDenom;
+        epochPercentRewardNum = _epochPercentNum;
+        epochPercentRewardDenom = _epochPercentDenom;
+        epochRewardMin = _epochRewardMin;
+        epochRewardMax = _epochRewardMax;
+
+        emit SetRewardParams(address(token), msg.sender,
+            _beginPercentNum, _beginPercentDenom,
+            _epochPercentNum, _epochPercentDenom,
+            _epochRewardMin, _epochRewardMax,
+            block.timestamp);
     }
-    function getReward() public view returns(uint256 percentNum, uint256 percentDenom) {
-        return (addLkPercentRewardNum, addLkPercentRewardDenom);
+    function getReward() public view
+            returns(uint256 _beginPercentNum, uint256 _beginPercentDenom,
+                    uint256 _epochPercentNum, uint256 _epochPercentDenom,
+                    uint256 _epochRewardMin, uint256 _epochRewardMax) {
+        return (addLkPercentRewardNum, addLkPercentRewardDenom,
+                epochPercentRewardNum, epochPercentRewardDenom,
+                epochRewardMin, epochRewardMax);
     }
+
     function setFee(uint256 percentNum, uint256 percentDenom) external onlyFeeEditor {
         require(percentDenom > 0, "denominator must be great then 0");
 
         getLkPercentFeeNum = percentNum;
         getLkPercentFeeDenom = percentDenom;
+
+        emit SetFeeParams(address(token), msg.sender,
+            percentNum, percentDenom,
+            block.timestamp);
     }
     function getFee() public view returns(uint256 percentNum, uint256 percentDenom) {
         return (getLkPercentFeeNum, getLkPercentFeeDenom);
     }
+
     function setLimit(uint256 percentNum, uint256 percentDenom) external onlyLimitEditor {
         require(percentDenom > 0, "denominator must be great then 0");
 
         getLkPercentLimitNum = percentNum;
         getLkPercentLimitDenom = percentDenom;
+
+        emit SetLimitParams(address(token), msg.sender,
+            percentNum, percentDenom,
+            block.timestamp);
     }
     function getLimit() public view returns(uint256 percentNum, uint256 percentDenom) {
         return (getLkPercentLimitNum, getLkPercentLimitDenom);
@@ -193,6 +282,15 @@ contract LiquidityPool is ReentrancyGuard {
     function deposit(uint256 _value_native) external payable nonReentrant {
         require(_value_native > 0, "value must be great then 0");
         require(token.balanceOf(msg.sender) >= _value_native, "sender balance must by great then amount");
+
+        // Apply epoch reward before add fUSD balance
+        applyEpochRewards(msg.sender);
+
+        // If current fUSD balance == 0 - add to rewardUsers and save currentEpoch
+        if (fUSD.balanceOf(msg.sender) == 0) {
+            rewardEpochs[user] = sfc.currentEpoch();
+            rewardUsers.push(msg.sender);
+        }
 
         uint256 priceToken = oracle.getPrice(address(token));
         require(priceToken > 0, "native token price must be great then 0");
@@ -238,6 +336,9 @@ contract LiquidityPool is ReentrancyGuard {
         require(_value_native > 0, "value must be great then 0");
         require(_value_native <= token.balanceOf(owner), "native token of contract not enaught");
 
+        // Apply epoch reward before withdraw fUSD balance
+        applyEpochRewards(msg.sender);
+
         uint256 priceToken = oracle.getPrice(address(token));
         require(priceToken > 0, "native token price must be great then 0");
         uint256 priceUSD = oracle.getPrice(address(fUSD));
@@ -268,5 +369,64 @@ contract LiquidityPool is ReentrancyGuard {
         amount_fUSD = _value_native.mul(priceToken).div(priceUSD);
         fee_fUSD = amount_fUSD.mul(getLkPercentFeeNum).div(getLkPercentFeeDenom);
         limit_fUSD = fUSD.balanceOf(msg.sender).mul(getLkPercentLimitNum).div(getLkPercentLimitDenom);
+    }
+
+    // Apply calculated epoch rewards from fUSD for user
+    function applyEpochRewards(address user) external nonReentrant {
+        uint256 lastEpoch = rewardEpochs[user];
+        uint256 currentEpoch = sfc.currentEpoch();
+        uint256 applyEpochs = currentEpoch - lastEpoch;
+
+        if (applyEpochs == 0) {
+            return;
+        }
+
+        uint256 currentBalance = fUSD.balanceOf(user);
+        uint256 newBalance = currentBalance.mul(
+            epochPercentRewardNum.add(epochPercentRewardDenom).div(epochPercentRewardDenom)^applyEpochs
+        );
+
+        uint256 diffBalance = newBalance - currentBalance;
+
+        // Check epoch reward limits
+        if (diffBalance < epochRewardMin) {
+            diffBalance = epochRewardMin;
+        }
+        if (epochRewardMax > 0 && diffBalance > epochRewardMax) {
+            diffBalance = epochRewardMax;
+        }
+
+        // Transfer rewards to user fUSD
+        if (diffBalance < fUSD.balanceOf(owner)) {
+            // If contract usd token balance great then amount - transfer
+            fUSD.safeTransferFrom(owner, user, diffBalance);
+        } else {
+            // Else - mint required amount to user address
+            bool success = fUSDmint.mint(user, diffBalance);
+            require(success, "error mint epoch reward fUSD to user");
+        }
+
+        // Save last epoch for apply user rewards
+        rewardEpochs[user] = currentEpoch;
+
+        // Event
+        emit EpochReward(address(token), msg.sender, lastEpoch, applyEpochs, diffBalance, block.timestamp);
+    }
+
+    // Apply epoch rewards for all users and clean rewardUsers list for users with 0 fUSD balance
+    function applyEpochRewardsAll() external onlyAdmin nonReentrant {
+        address[] newRewardUsers = new address[];
+
+        for (uint i = 0; i < rewardUsers.length; i++) {
+            applyEpochRewards(rewardUsers[i]);
+
+            if (fUSD.balanceOf(rewardUsers[i]) > 0) {
+                newRewardUsers.push(rewardUsers[i]);
+            }
+        }
+
+        if (rewardUsers.length != newRewardUsers.length) {
+            rewardUsers = newRewardUsers;
+        }
     }
 }

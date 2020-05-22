@@ -108,9 +108,13 @@ async function newLiquidityPool(nativeToken, fusd, testOracle, testSFC) {
 
 async function checkPoolParams() {
   const resReward = await liquiditypool.getReward()
-  const {0: rewardNum, 1: rewardDenom} = resReward;
+  const {0: rewardNum, 1: rewardDenom, 2: epochRewardNum, 3: epochRewardDenom, 4: epochRewardMin, 5: epochRewardMax} = resReward;
   assert.equal(Web3.utils.toDecimal(rewardNum), 0, "correct init rewardNum value");
   assert.equal(Web3.utils.toDecimal(rewardDenom), 1, "correct init rewardDenom value");
+  assert.equal(Web3.utils.toDecimal(epochRewardNum), 0, "correct init epochRewardNum value");
+  assert.equal(Web3.utils.toDecimal(epochRewardDenom), 1, "correct init epochRewardDenom value");
+  assert.equal(Web3.utils.toDecimal(epochRewardMin), 0, "correct init rewardMin value");
+  assert.equal(Web3.utils.toDecimal(epochRewardMax), 0, "correct init rewardMax value");
 
   const resFee = await liquiditypool.getFee()
   const {0: feeNum, 1: feeDenom} = resFee;
@@ -146,7 +150,7 @@ async function checkSuccessDepositWithReward(wallets) {
   let nonZeroAmt = Web3.utils.toBN('100');
 
   // With reward
-  await liquiditypool.setReward(1, 100);
+  await liquiditypool.setReward(1, 100, 0, 1, 0, 0);
 
   let msg = {from: wallets[1]};
   var res = await liquiditypool.deposit(nonZeroAmt, msg);
@@ -191,28 +195,28 @@ async function checkSuccessDepositInfo() {
   assert.equal(Web3.utils.toDecimal(amount_fUSD), Web3.utils.toDecimal(nonZeroAmt), "correct amount from depositInfo");
   assert.equal(Web3.utils.toDecimal(reward_fUSD), 0, "correct reward from depositInfo");
 
-  await liquiditypool.setReward(1, 100);
+  await liquiditypool.setReward(1, 100, 0, 1, 0, 0);
 
   depositInfo = await liquiditypool.depositInfo(nonZeroAmt);
   var {0: amount_fUSDr100, 1: reward_fUSDr100} = depositInfo;
   assert.equal(Web3.utils.toDecimal(amount_fUSDr100), Web3.utils.toDecimal(nonZeroAmt), "correct amount from depositInfo");
   assert.equal(Web3.utils.toDecimal(reward_fUSDr100), 1, "correct reward from depositInfo");
 
-  await liquiditypool.setReward(1, 50);
+  await liquiditypool.setReward(1, 50, 0, 1, 0, 0);
 
   depositInfo = await liquiditypool.depositInfo(nonZeroAmt);
   var {0: amount_fUSDr50, 1: reward_fUSDr50} = depositInfo;
   assert.equal(Web3.utils.toDecimal(amount_fUSDr50), Web3.utils.toDecimal(nonZeroAmt), "correct amount from depositInfo");
   assert.equal(Web3.utils.toDecimal(reward_fUSDr50), 2, "correct reward from depositInfo");
 
-  await liquiditypool.setReward(1, 20);
+  await liquiditypool.setReward(1, 20, 0, 1, 0, 0);
 
   depositInfo = await liquiditypool.depositInfo(nonZeroAmt);
   var {0: amount_fUSDr20, 1: reward_fUSDr20} = depositInfo;
   assert.equal(Web3.utils.toDecimal(amount_fUSDr20), Web3.utils.toDecimal(nonZeroAmt), "correct amount from depositInfo");
   assert.equal(Web3.utils.toDecimal(reward_fUSDr20), 5, "correct reward from depositInfo");
 
-  await liquiditypool.setReward(1, 10);
+  await liquiditypool.setReward(1, 10, 0, 1, 0, 0);
 
   depositInfo = await liquiditypool.depositInfo(nonZeroAmt);
   var {0: amount_fUSDr10, 1: reward_fUSDr10} = depositInfo;

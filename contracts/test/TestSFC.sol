@@ -7,6 +7,7 @@ contract TestSFC {
     uint256 public validatorRewards1;
     uint256 public validatorRewards2;
     uint256 public validatorRewards3;
+    uint256 public _currentEpoch;
 
     function setDelegationRewards(uint256 v1, uint256 v2, uint256 v3) external {
         delegationRewards1 = v1;
@@ -20,6 +21,10 @@ contract TestSFC {
         validatorRewards3 = v3;
     }
 
+    function setCurrentEpoch(uint256 epoch) external {
+        _currentEpoch = epoch;
+    }
+
     function calcDelegationRewards(address delegator, uint256 _fromEpoch, uint256 maxEpochs) external view returns (uint256, uint256, uint256) {
         return(delegationRewards1, delegationRewards2, delegationRewards3);
     }
@@ -30,5 +35,9 @@ contract TestSFC {
 
     function getStakerID(address addr) external view returns (uint256) {
         return 0;
+    }
+
+    function currentEpoch() external view returns (uint256) {
+        return(_currentEpoch);
     }
 }
