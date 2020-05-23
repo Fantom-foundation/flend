@@ -383,7 +383,7 @@ contract LiquidityPool is ReentrancyGuard {
 
         uint256 currentBalance = fUSD.balanceOf(user);
         uint256 newBalance = currentBalance.mul(
-            epochPercentRewardNum.add(epochPercentRewardDenom).div(epochPercentRewardDenom)^applyEpochs
+            epochPercentRewardNum.add(epochPercentRewardDenom)^applyEpochs.div(epochPercentRewardDenom^applyEpochs)
         );
 
         uint256 diffBalance = newBalance - currentBalance;
