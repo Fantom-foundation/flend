@@ -25,15 +25,15 @@ contract TestSFC {
         _currentEpoch = epoch;
     }
 
-    function calcDelegationRewards(address delegator, uint256 _fromEpoch, uint256 maxEpochs) external view returns (uint256, uint256, uint256) {
+    function calcDelegationRewards(address /*delegator*/, uint256 /*_fromEpoch*/, uint256 /*maxEpochs*/) external view returns (uint256, uint256, uint256) {
         return(delegationRewards1, delegationRewards2, delegationRewards3);
     }
 
-    function calcValidatorRewards(uint256 stakerID, uint256 _fromEpoch, uint256 maxEpochs) external view returns (uint256, uint256, uint256) {
+    function calcValidatorRewards(uint256 /*stakerID*/, uint256 /*_fromEpoch*/, uint256 /*maxEpochs*/) external view returns (uint256, uint256, uint256) {
         return(validatorRewards1, validatorRewards2, validatorRewards3);
     }
 
-    function getStakerID(address addr) external view returns (uint256) {
+    function getStakerID(address /*addr*/) public pure returns (uint256) {
         return 0;
     }
 

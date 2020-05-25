@@ -17,7 +17,7 @@ contract TestToken is Context, ERC20, ERC20Detailed, ERC20Mintable, ERC20Burnabl
     }
 
     // For test
-    function isMinter(address account) public view returns (bool) {
+    function isMinter(address /*account*/) public view returns (bool) {
         return true;
     }
 
