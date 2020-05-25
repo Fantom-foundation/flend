@@ -156,15 +156,15 @@ contract LiquidityPool is ReentrancyGuard {
         _;
     }
     modifier onlyRewardEditor {
-        require(msg.sender == owner || rewardEditors[msg.sender], "only owner or reward editors can call this function");
+        require(msg.sender == owner || admins[msg.sender] || rewardEditors[msg.sender], "only owner or reward editors can call this function");
         _;
     }
     modifier onlyFeeEditor {
-        require(msg.sender == owner || feeEditors[msg.sender], "only owner or fee editors can call this function");
+        require(msg.sender == owner || admins[msg.sender] || feeEditors[msg.sender], "only owner or fee editors can call this function");
         _;
     }
     modifier onlyLimitEditor {
-        require(msg.sender == owner || limitEditors[msg.sender], "only owner or limit editors can call this function");
+        require(msg.sender == owner || admins[msg.sender] || limitEditors[msg.sender], "only owner or limit editors can call this function");
         _;
     }
 
@@ -261,19 +261,27 @@ contract LiquidityPool is ReentrancyGuard {
         fUSDPrice = oracle.getPrice(address(fUSD));
         require(fUSDPrice > 0, "fUSD token price must be great then 0");
     }
-    function getInfo() public view returns(address tokenNative,
-        uint256 rewardNum, uint256 rewardDenom, uint256 feeNum, uint256 feeDenom, uint256 limitNum, uint256 limitDenom) {
+    function getInfo() public view returns(address _tokenNative,
+        uint256 _rewardNum, uint256 _rewardDenom,
+        uint256 _feeNum, uint256 _feeDenom,
+        uint256 _limitNum, uint256 _limitDenom,
+        uint256 _epochNum, uint256 _epochDenom, uint256 _epochRewardMin, uint256 _epochRewardMax
+    ) {
+        _tokenNative = address(token);
 
-        tokenNative = address(token);
+        _rewardNum = addLkRewardNum;
+        _rewardDenom = addLkRewardDenom;
 
-        rewardNum = addLkRewardNum;
-        rewardDenom = addLkRewardDenom;
+        _feeNum = getLkFeeNum;
+        _feeDenom = getLkFeeDenom;
 
-        feeNum = getLkFeeNum;
-        feeDenom = getLkFeeDenom;
+        _limitNum = getLkLimitNum;
+        _limitDenom = getLkLimitDenom;
 
-        limitNum = getLkLimitNum;
-        limitDenom = getLkLimitDenom;
+        _epochNum = epochRewardNum;
+        _epochDenom = epochRewardDenom;
+        _epochRewardMin = epochRewardMin;
+        _epochRewardMax = epochRewardMax;
     }
 
     // deposit - add native token from user and generate usd tokens for user

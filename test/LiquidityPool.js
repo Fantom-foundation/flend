@@ -515,7 +515,7 @@ async function checkEpochRewardCalc1000_100_100_0_1(wallets) {
   /*
     With Max limit (balance = 1000, epoch rate = 1/100, min limit = 0, max limit = 1)
   */
-  
+
   await liquiditypool.setReward(1, 100, 1, 100, 0, 1);
 
   // Check for 1 epoch
