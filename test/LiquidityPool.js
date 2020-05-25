@@ -86,6 +86,18 @@ contract('liquidity pool test', async (wallets) => {
   it('test success withdraw info', async () => {
     await checkSuccessWithdrawInfo(wallets)
   });
+  it('test epoch rewards calc 1/1000 for balance 1000', async () => {
+    await checkEpochRewardCalc1000_100_1000_0_0(wallets)
+  });
+  it('test epoch rewards calc 1/10 for balance 1000', async () => {
+    await checkEpochRewardCalc1000_100_10_0_0(wallets)
+  });
+  it('test epoch rewards calc 1/1000 for balance 100 with min limit 1', async () => {
+    await checkEpochRewardCalc100_100_1000_1_0(wallets)
+  });
+  it('test epoch rewards calc 1/100 for balance 1000 with max limit 1', async () => {
+    await checkEpochRewardCalc1000_100_100_0_1(wallets)
+  });
 });
 
 tryCatch = async function(promise, errType) {
@@ -344,4 +356,196 @@ async function checkSuccessWithdrawInfo(wallets) {
   assert.equal(Web3.utils.toDecimal(amount_fUSDf2l2), Web3.utils.toDecimal(nonZeroAmt), "correct amount from withdrawInfo");
   assert.equal(Web3.utils.toDecimal(fee_fUSDf2l2), Web3.utils.toDecimal(nonZeroAmt) / 2, "correct fee from withdrawInfo");
   assert.equal(Web3.utils.toDecimal(limit_fUSDf2l2), Web3.utils.toDecimal(wallet1Balance) / 2, "correct limit from withdrawInfo");
+}
+
+async function checkEpochRewardCalc1000_100_1000_0_0(wallets) {
+  // Init state
+  await nativeToken.transferFrom(wallets[0], wallets[1], wallet1BeginBalance);
+  await testSFC.setCurrentEpoch(0)
+
+  let nonZeroAmt = Web3.utils.toBN('1000');
+
+  let msg = {from: wallets[1]};
+  var res = await liquiditypool.deposit(nonZeroAmt, msg);
+  assert.isNotNull(res.receipt, "good transaction receipt");
+
+  /*
+    Set epoch reward values 1/1000 without limits
+  */
+  await liquiditypool.setReward(1, 100, 1, 1000, 0, 0);
+
+  // Check for 1 epoch
+
+  await testSFC.setCurrentEpoch(1);
+
+  await liquiditypool.applyRewardsAll();
+
+  withReward = Web3.utils.toDecimal(await testToken2.balanceOf(wallets[1]));
+  assert.equal(Web3.utils.toDecimal(withReward), 1001, "correct fUSD balance after apply epoch reward");
+
+  await liquiditypool.withdraw(1, msg);
+
+  // After 10 epochs
+  await testSFC.setCurrentEpoch(11);
+
+  await liquiditypool.applyRewardsAll();
+
+  withReward = Web3.utils.toDecimal(await testToken2.balanceOf(wallets[1]));
+  assert.equal(Web3.utils.toDecimal(withReward), 1010, "correct fUSD balance after apply epoch reward");
+
+  await liquiditypool.withdraw(10, msg);
+
+  // After 100 epochs
+  beginBalance = Web3.utils.toDecimal(await testToken2.balanceOf(wallets[1]));
+
+  await testSFC.setCurrentEpoch(111);
+
+  await liquiditypool.applyRewardsAll();
+
+  withReward = Web3.utils.toDecimal(await testToken2.balanceOf(wallets[1]));
+  assert.equal(Web3.utils.toDecimal(withReward), 1100, "correct fUSD balance after apply epoch reward");
+}
+
+async function checkEpochRewardCalc1000_100_10_0_0(wallets) {
+  // Init state
+  await nativeToken.transferFrom(wallets[0], wallets[1], wallet1BeginBalance);
+  await testSFC.setCurrentEpoch(0)
+
+  let nonZeroAmt = Web3.utils.toBN('1000');
+
+  let msg = {from: wallets[1]};
+  var res = await liquiditypool.deposit(nonZeroAmt, msg);
+  assert.isNotNull(res.receipt, "good transaction receipt");
+
+  /*
+     Set epoch reward values 1/10 without limits
+   */
+  await liquiditypool.setReward(1, 100, 1, 10, 0, 0);
+
+  // Check for 1 epoch
+
+  await testSFC.setCurrentEpoch(1);
+
+  await liquiditypool.applyRewardsAll();
+
+  withReward = Web3.utils.toDecimal(await testToken2.balanceOf(wallets[1]));
+  assert.equal(Web3.utils.toDecimal(withReward), 1100, "correct fUSD balance after apply epoch reward");
+
+  await liquiditypool.withdraw(100, msg);
+
+  // After 3 epochs
+  await testSFC.setCurrentEpoch(4);
+
+  await liquiditypool.applyRewardsAll();
+
+  withReward = Web3.utils.toDecimal(await testToken2.balanceOf(wallets[1]));
+  assert.equal(Web3.utils.toDecimal(withReward), 1331, "correct fUSD balance after apply epoch reward");
+
+  await liquiditypool.withdraw(331, msg);
+
+  // After 10 epochs
+  await testSFC.setCurrentEpoch(14);
+
+  await liquiditypool.applyRewardsAll();
+
+  withReward = Web3.utils.toDecimal(await testToken2.balanceOf(wallets[1]));
+  assert.equal(Web3.utils.toDecimal(withReward), 2591, "correct fUSD balance after apply epoch reward");
+}
+
+async function checkEpochRewardCalc100_100_1000_1_0(wallets) {
+  // Init state
+  await nativeToken.transferFrom(wallets[0], wallets[1], wallet1BeginBalance);
+  await testSFC.setCurrentEpoch(0)
+
+  let nonZeroAmt = Web3.utils.toBN('100');
+
+  let msg = {from: wallets[1]};
+  var res = await liquiditypool.deposit(nonZeroAmt, msg);
+  assert.isNotNull(res.receipt, "good transaction receipt");
+
+  /*
+    With Min limit (balance = 100, epoch rate = 1/1000, min limit = 1)
+  */
+
+  await liquiditypool.setReward(1, 100, 1, 1000, 1, 0);
+
+  // Check for 1 epoch
+
+  await testSFC.setCurrentEpoch(1);
+
+  await liquiditypool.applyRewardsAll();
+
+  withReward = Web3.utils.toDecimal(await testToken2.balanceOf(wallets[1]));
+  assert.equal(Web3.utils.toDecimal(withReward), 101, "correct fUSD balance after apply epoch reward");
+
+  await liquiditypool.withdraw(1, msg);
+
+  // After 10 epochs
+  await testSFC.setCurrentEpoch(11);
+
+  await liquiditypool.applyRewardsAll();
+
+  withReward = Web3.utils.toDecimal(await testToken2.balanceOf(wallets[1]));
+  assert.equal(Web3.utils.toDecimal(withReward), 110, "correct fUSD balance after apply epoch reward");
+
+  await liquiditypool.withdraw(10, msg);
+
+  // After 100 epochs
+  beginBalance = Web3.utils.toDecimal(await testToken2.balanceOf(wallets[1]));
+
+  await testSFC.setCurrentEpoch(111);
+
+  await liquiditypool.applyRewardsAll();
+
+  withReward = Web3.utils.toDecimal(await testToken2.balanceOf(wallets[1]));
+  assert.equal(Web3.utils.toDecimal(withReward), 200, "correct fUSD balance after apply epoch reward");
+}
+
+async function checkEpochRewardCalc1000_100_100_0_1(wallets) {
+  // Init state
+  await nativeToken.transferFrom(wallets[0], wallets[1], wallet1BeginBalance);
+  await testSFC.setCurrentEpoch(0)
+
+  let nonZeroAmt = Web3.utils.toBN('1000');
+
+  let msg = {from: wallets[1]};
+  var res = await liquiditypool.deposit(nonZeroAmt, msg);
+  assert.isNotNull(res.receipt, "good transaction receipt");
+
+  /*
+    With Max limit (balance = 1000, epoch rate = 1/100, min limit = 0, max limit = 1)
+  */
+  
+  await liquiditypool.setReward(1, 100, 1, 100, 0, 1);
+
+  // Check for 1 epoch
+
+  await testSFC.setCurrentEpoch(1);
+
+  await liquiditypool.applyRewardsAll();
+
+  withReward = Web3.utils.toDecimal(await testToken2.balanceOf(wallets[1]));
+  assert.equal(Web3.utils.toDecimal(withReward), 1001, "correct fUSD balance after apply epoch reward");
+
+  await liquiditypool.withdraw(1, msg);
+
+  // After 10 epochs
+  await testSFC.setCurrentEpoch(11);
+
+  await liquiditypool.applyRewardsAll();
+
+  withReward = Web3.utils.toDecimal(await testToken2.balanceOf(wallets[1]));
+  assert.equal(Web3.utils.toDecimal(withReward), 1010, "correct fUSD balance after apply epoch reward");
+
+  await liquiditypool.withdraw(10, msg);
+
+  // After 100 epochs
+  beginBalance = Web3.utils.toDecimal(await testToken2.balanceOf(wallets[1]));
+
+  await testSFC.setCurrentEpoch(111);
+
+  await liquiditypool.applyRewardsAll();
+
+  withReward = Web3.utils.toDecimal(await testToken2.balanceOf(wallets[1]));
+  assert.equal(Web3.utils.toDecimal(withReward), 1100, "correct fUSD balance after apply epoch reward");
 }

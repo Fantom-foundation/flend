@@ -38,18 +38,18 @@ contract LiquidityPool is ReentrancyGuard {
     IOracle internal oracle;
     ISFC internal sfc;
 
-    uint256 internal addLkPercentRewardNum;
-    uint256 internal addLkPercentRewardDenom;
-    uint256 internal getLkPercentFeeNum;
-    uint256 internal getLkPercentFeeDenom;
-    uint256 internal getLkPercentLimitNum;
-    uint256 internal getLkPercentLimitDenom;
+    uint256 internal addLkRewardNum;
+    uint256 internal addLkRewardDenom;
+    uint256 internal getLkFeeNum;
+    uint256 internal getLkFeeDenom;
+    uint256 internal getLkLimitNum;
+    uint256 internal getLkLimitDenom;
 
     // Epoch reward for fUSD
     uint256 internal epochRewardMin;
     uint256 internal epochRewardMax;            // 0 - mean "no limit"
-    uint256 internal epochPercentRewardNum;
-    uint256 internal epochPercentRewardDenom;
+    uint256 internal epochRewardNum;
+    uint256 internal epochRewardDenom;
 
     // Saved epochs for apply epoch rewards for users
     mapping (address => uint256) internal rewardEpochs;
@@ -75,10 +75,10 @@ contract LiquidityPool is ReentrancyGuard {
         address indexed _token,
         address indexed _user,
 
-        uint256 beginPercentNum,
-        uint256 beginPercentDenom,
-        uint256 epochPercentNum,
-        uint256 epochPercentDenom,
+        uint256 beginNum,
+        uint256 beginDenom,
+        uint256 epochNum,
+        uint256 epochDenom,
         uint256 epochMin,
         uint256 epochMax,
 
@@ -88,8 +88,8 @@ contract LiquidityPool is ReentrancyGuard {
         address indexed _token,
         address indexed _user,
 
-        uint256 feePercentNum,
-        uint256 feePercentDenom,
+        uint256 feeNum,
+        uint256 feeDenom,
 
         uint256 _timestamp
     );
@@ -97,8 +97,8 @@ contract LiquidityPool is ReentrancyGuard {
         address indexed _token,
         address indexed _user,
 
-        uint256 limitPercentNum,
-        uint256 limitPercentDenom,
+        uint256 limitNum,
+        uint256 limitDenom,
 
         uint256 _timestamp
     );
@@ -127,22 +127,22 @@ contract LiquidityPool is ReentrancyGuard {
         owner = msg.sender;
 
         // No limits for output
-        getLkPercentLimitNum = 1;
-        getLkPercentLimitDenom = 1;
+        getLkLimitNum = 1;
+        getLkLimitDenom = 1;
 
         // No reward
-        addLkPercentRewardNum = 0;
-        addLkPercentRewardDenom = 1;
+        addLkRewardNum = 0;
+        addLkRewardDenom = 1;
 
         // No fee
-        getLkPercentFeeNum = 0;
-        getLkPercentFeeDenom = 1;
+        getLkFeeNum = 0;
+        getLkFeeDenom = 1;
 
         // No epoch reward
         epochRewardMin = 0;
         epochRewardMax = 0;
-        epochPercentRewardNum = 0;
-        epochPercentRewardDenom = 1;
+        epochRewardNum = 0;
+        epochRewardDenom = 1;
 
         currentRewardUsers = 0;
     }
@@ -197,61 +197,61 @@ contract LiquidityPool is ReentrancyGuard {
     }
 
     // Change options
-    function setReward(uint256 _beginPercentNum, uint256 _beginPercentDenom,
-                        uint256 _epochPercentNum, uint256 _epochPercentDenom,
+    function setReward(uint256 _beginNum, uint256 _beginDenom,
+                        uint256 _epochNum, uint256 _epochDenom,
                         uint256 _epochRewardMin, uint256 _epochRewardMax)
             external onlyRewardEditor {
-        require(_beginPercentDenom > 0, "denominator must be great then 0");
-        require(_epochPercentDenom > 0, "denominator must be great then 0");
+        require(_beginDenom > 0, "denominator must be great then 0");
+        require(_epochDenom > 0, "denominator must be great then 0");
 
-        addLkPercentRewardNum = _beginPercentNum;
-        addLkPercentRewardDenom = _beginPercentDenom;
-        epochPercentRewardNum = _epochPercentNum;
-        epochPercentRewardDenom = _epochPercentDenom;
+        addLkRewardNum = _beginNum;
+        addLkRewardDenom = _beginDenom;
+        epochRewardNum = _epochNum;
+        epochRewardDenom = _epochDenom;
         epochRewardMin = _epochRewardMin;
         epochRewardMax = _epochRewardMax;
 
         emit SetRewardParams(address(token), msg.sender,
-            _beginPercentNum, _beginPercentDenom,
-            _epochPercentNum, _epochPercentDenom,
+            _beginNum, _beginDenom,
+            _epochNum, _epochDenom,
             _epochRewardMin, _epochRewardMax,
             block.timestamp);
     }
     function getReward() public view
-            returns(uint256 _beginPercentNum, uint256 _beginPercentDenom,
-                    uint256 _epochPercentNum, uint256 _epochPercentDenom,
+            returns(uint256 _beginNum, uint256 _beginDenom,
+                    uint256 _epochNum, uint256 _epochDenom,
                     uint256 _epochRewardMin, uint256 _epochRewardMax) {
-        return (addLkPercentRewardNum, addLkPercentRewardDenom,
-                epochPercentRewardNum, epochPercentRewardDenom,
+        return (addLkRewardNum, addLkRewardDenom,
+        epochRewardNum, epochRewardDenom,
                 epochRewardMin, epochRewardMax);
     }
 
-    function setFee(uint256 percentNum, uint256 percentDenom) external onlyFeeEditor {
-        require(percentDenom > 0, "denominator must be great then 0");
+    function setFee(uint256 valNum, uint256 valDenom) external onlyFeeEditor {
+        require(valDenom > 0, "denominator must be great then 0");
 
-        getLkPercentFeeNum = percentNum;
-        getLkPercentFeeDenom = percentDenom;
+        getLkFeeNum = valNum;
+        getLkFeeDenom = valDenom;
 
         emit SetFeeParams(address(token), msg.sender,
-            percentNum, percentDenom,
+            valNum, valDenom,
             block.timestamp);
     }
-    function getFee() public view returns(uint256 percentNum, uint256 percentDenom) {
-        return (getLkPercentFeeNum, getLkPercentFeeDenom);
+    function getFee() public view returns(uint256 valNum, uint256 valDenom) {
+        return (getLkFeeNum, getLkFeeDenom);
     }
 
-    function setLimit(uint256 percentNum, uint256 percentDenom) external onlyLimitEditor {
-        require(percentDenom > 0, "denominator must be great then 0");
+    function setLimit(uint256 valNum, uint256 valDenom) external onlyLimitEditor {
+        require(valDenom > 0, "denominator must be great then 0");
 
-        getLkPercentLimitNum = percentNum;
-        getLkPercentLimitDenom = percentDenom;
+        getLkLimitNum = valNum;
+        getLkLimitDenom = valDenom;
 
         emit SetLimitParams(address(token), msg.sender,
-            percentNum, percentDenom,
+            valNum, valDenom,
             block.timestamp);
     }
-    function getLimit() public view returns(uint256 percentNum, uint256 percentDenom) {
-        return (getLkPercentLimitNum, getLkPercentLimitDenom);
+    function getLimit() public view returns(uint256 valNum, uint256 valDenom) {
+        return (getLkLimitNum, getLkLimitDenom);
     }
 
     // getPrice - get price fUSD/native token
@@ -266,14 +266,14 @@ contract LiquidityPool is ReentrancyGuard {
 
         tokenNative = address(token);
 
-        rewardNum = addLkPercentRewardNum;
-        rewardDenom = addLkPercentRewardDenom;
+        rewardNum = addLkRewardNum;
+        rewardDenom = addLkRewardDenom;
 
-        feeNum = getLkPercentFeeNum;
-        feeDenom = getLkPercentFeeDenom;
+        feeNum = getLkFeeNum;
+        feeDenom = getLkFeeDenom;
 
-        limitNum = getLkPercentLimitNum;
-        limitDenom = getLkPercentLimitDenom;
+        limitNum = getLkLimitNum;
+        limitDenom = getLkLimitDenom;
     }
 
     // deposit - add native token from user and generate usd tokens for user
@@ -299,7 +299,7 @@ contract LiquidityPool is ReentrancyGuard {
 
         // Transfer contract usd tokens with reward to user balance
         uint256 amount_fUSD = _value_native.mul(priceToken).div(priceUSD);
-        uint256 reward_fUSD = amount_fUSD.mul(addLkPercentRewardNum).div(addLkPercentRewardDenom);
+        uint256 reward_fUSD = amount_fUSD.mul(addLkRewardNum).div(addLkRewardDenom);
         uint256 fUSDAmount = amount_fUSD.add(reward_fUSD);
 
         if (fUSDAmount < fUSD.balanceOf(owner)) {
@@ -326,7 +326,7 @@ contract LiquidityPool is ReentrancyGuard {
         require(priceUSD > 0, "fUSD token price must be great then 0");
 
         amount_fUSD = _value_native.mul(priceToken).div(priceUSD);
-        reward_fUSD = amount_fUSD.mul(addLkPercentRewardNum).div(addLkPercentRewardDenom);
+        reward_fUSD = amount_fUSD.mul(addLkRewardNum).div(addLkRewardDenom);
     }
 
     // withdraw - return native token to user over usd tokens conversation and fee
@@ -345,11 +345,11 @@ contract LiquidityPool is ReentrancyGuard {
         require(priceUSD > 0, "fUSD token price must be great then 0");
 
         uint256 amount_fUSD = _value_native.mul(priceToken).div(priceUSD);
-        uint256 fee_fUSD = amount_fUSD.mul(getLkPercentFeeNum).div(getLkPercentFeeDenom);
+        uint256 fee_fUSD = amount_fUSD.mul(getLkFeeNum).div(getLkFeeDenom);
         uint256 fUSDAmount = amount_fUSD.add(fee_fUSD);
 
         // Check limits
-        require(fUSDAmount <= fUSD.balanceOf(msg.sender).mul(getLkPercentLimitNum).div(getLkPercentLimitDenom),
+        require(fUSDAmount <= fUSD.balanceOf(msg.sender).mul(getLkLimitNum).div(getLkLimitDenom),
             "out of limits for fUSD tokens getting");
 
         fUSD.safeTransferFrom(msg.sender, owner, fUSDAmount);
@@ -367,34 +367,45 @@ contract LiquidityPool is ReentrancyGuard {
         require(priceUSD > 0, "fUSD token price must be great then 0");
 
         amount_fUSD = _value_native.mul(priceToken).div(priceUSD);
-        fee_fUSD = amount_fUSD.mul(getLkPercentFeeNum).div(getLkPercentFeeDenom);
-        limit_fUSD = fUSD.balanceOf(msg.sender).mul(getLkPercentLimitNum).div(getLkPercentLimitDenom);
+        fee_fUSD = amount_fUSD.mul(getLkFeeNum).div(getLkFeeDenom);
+        limit_fUSD = fUSD.balanceOf(msg.sender).mul(getLkLimitNum).div(getLkLimitDenom);
     }
 
     // Apply calculated epoch rewards from fUSD for user
     function applyEpochRewards(address user) internal {
         uint256 lastEpoch = rewardEpochs[user];
         uint256 currentEpoch = sfc.currentEpoch();
-        uint256 applyEpochs = currentEpoch - lastEpoch;
-
-        if (applyEpochs == 0) {
+        require(currentEpoch >= lastEpoch, "current epoch should be great then user saved last epoch");
+        if (currentEpoch == lastEpoch) {
             return;
         }
 
+        uint256 applyEpochs = currentEpoch - lastEpoch;
+
         uint256 currentBalance = fUSD.balanceOf(user);
-        uint256 newBalance = currentBalance.mul(
-            epochPercentRewardNum.add(epochPercentRewardDenom)^applyEpochs.div(epochPercentRewardDenom^applyEpochs)
-        );
+        uint256 newBalance = currentBalance;
+        uint256 prevBalance = currentBalance;
+        uint256 diffBalance = 0;
+        for (uint256 i = 0; i < applyEpochs; i++) {
+            newBalance = newBalance.mul(
+                epochRewardNum.add(epochRewardDenom)
+            ).div(epochRewardDenom);
 
-        uint256 diffBalance = newBalance - currentBalance;
+            diffBalance = newBalance - prevBalance;
 
-        // Check epoch reward limits
-        if (diffBalance < epochRewardMin) {
-            diffBalance = epochRewardMin;
+            // Check epoch reward limits
+            if (diffBalance < epochRewardMin) {
+                diffBalance = epochRewardMin;
+            }
+            if (epochRewardMax > 0 && diffBalance > epochRewardMax) {
+                diffBalance = epochRewardMax;
+            }
+
+            newBalance = prevBalance + diffBalance;
+            prevBalance = newBalance;
         }
-        if (epochRewardMax > 0 && diffBalance > epochRewardMax) {
-            diffBalance = epochRewardMax;
-        }
+
+        diffBalance = newBalance - currentBalance;
 
         // Transfer rewards to user fUSD
         if (diffBalance < fUSD.balanceOf(owner)) {
